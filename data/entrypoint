@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -eo pipefail
+[[ "$TRACE" ]] && set -x
+
+: ${VOLUME_DIR:=/mnt}
+: ${VOLUME_NAME:=volume}
+: ${DEVICE_NAME:=lukscrypter}
+
+out() {
+  echo "** $@"
+}
+
+run_escape_to() {
+  exec "$@"
+}
+
+check_volume() {
+  local volume_path=${VOLUME_DIR}/${VOLUME_NAME}
+  if [[ -f "$volume_path" ]]; then
+    out "Volume ${volume_path} exists"
+    return 0
+  else
+    out "!! Volume ${volume_path} does not exist"
+    return 1
+  fi
+}
+
+create_volume() {
+  local size="$1"; shift
+  local luks_params="$@"
+  local volume_path=${VOLUME_DIR}/${VOLUME_NAME}
+  truncate -s ${size} ${volume_path}
+  cryptsetup ${luks_params} luksFormat ${volume_path}
+  out "Volume ${volume_path} ($size) was created"
+}
+
+start_device() {
+  local device_name=${1:-$DEVICE_NAME}; shift
+  local luks_params="$@"
+  local volume_path=${VOLUME_DIR}/${VOLUME_NAME}
+  cryptsetup ${luks_params} luksOpen ${volume_path} ${device_name}
+  out "Device ${device_name} started"
+  if [[ "$(file -sL /dev/mapper/${device_name} | awk /data$/)" ]]; then
+    mkfs.ext4 /dev/mapper/${device_name}
+    out "Ext4 filesystem was creates"
+  fi
+}
+
+stop_device() {
+  local device_name=${1:-$DEVICE_NAME}
+  cryptsetup luksClose ${device_name}
+  out "Device ${device_name} stopped"
+}
+
+main() {
+  local cmd="$1"; shift
+  local args="$@"
+
+  case "$cmd" in
+  escto)
+    run_escape_to "$args";;
+  create)
+    if check_volume; then
+      out "Skipping creation"
+      exit 0
+    fi
+    create_volume "$args";; # $1 - size, $2 - luks_params
+  start)
+    if ! check_volume; then
+      out "!! Please create volume first"
+      exit 1
+    fi
+    start_device "$args";; # $1 - device_name, $2 - luks_params
+  stop)
+    stop_device "$args";; # $1 - device_name
+  esac
+}
+
+main "$@"
