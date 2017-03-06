@@ -1,6 +1,6 @@
-FROM gliderlabs/alpine:3.4
+FROM alpine:3.5
 
-RUN apk-install bash cryptsetup file e2fsprogs
+RUN apk add --no-cache bash cryptsetup file e2fsprogs
 
 COPY data/entrypoint /entrypoint
 RUN chmod 755 /entrypoint
